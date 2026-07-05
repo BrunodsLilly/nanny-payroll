@@ -22,6 +22,7 @@ Current ADRs:
 | 0004 | Round `float64` money values (to cents, despite the ADR text saying "thousandths") |
 | 0005 | Simplified flat-rate tax withholding, hard-coded for a single CA employee |
 | 0006 | Paychecks are immutable — computed once, persisted, never recalculated |
+| 0007 | SQLite (via `modernc.org/sqlite`) for persistence, over Postgres |
 
 ## Commands
 
@@ -39,7 +40,7 @@ go test ./domain/... -run TestCalculateNetPay_40Hours_At20PerHour_DeductsTaxes -
 
 `cmd/web` has a `go.mod` but no `main.go` yet, and `adapters/sqlite` has a `go.mod` but no implementation file — both are unfinished per `TODO.md`.
 
-**Known broken build:** `adapters/ui/server.go` calls `app.NewPayrollService()` and `payroll_service.CalculatePaycheck()` with no arguments, but those functions require `(ports.EmployeeRepository, ports.PayrollRepository)` and `(hours, rate float64)` respectively. This currently fails `go build ./adapters/ui/...` and `go test ./functional_tests/...`. Fix by wiring real arguments through, not by changing the service signatures without an ADR if that changes the design.
+`adapters/ui/server.go`'s `/paycheck` endpoint calls `app.NewPayrollService(nil, nil)` since `CalculatePaycheck` doesn't touch the repositories yet — it's a stateless preview endpoint, not the persist-then-read flow described in ADR-0006. Once a real use case needs the repositories, wire real implementations through instead of `nil`.
 
 ## Architecture
 

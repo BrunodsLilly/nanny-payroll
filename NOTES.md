@@ -14,22 +14,9 @@ Design concerns, deferred decisions, and gotchas. Append with `/note <text>`.
 - Interface satisfaction is enforced by the compiler at `cmd/web/main.go` only
 - Swapping persistence (e.g. SQLite → Postgres) = add adapter module + change one line in main.go
 
-## Deferred: Persistence Layer
+## Persistence Layer
 
-**Undecided between SQLite and Postgres.**
-
-Arguments for SQLite:
-- Zero infra — single file, no server
-- `modernc.org/sqlite` is pure Go (no CGO), easy to deploy anywhere
-- Fastest path to working software
-
-Arguments for Postgres:
-- Payroll data is relational by nature (employees, pay periods, payments)
-- Better for multi-user / production scenarios
-- `pgx/v5` is the gold-standard Go driver
-
-**Leaning SQLite to start.** The adapter boundary makes this a non-commitment —
-postgres is a future drop-in without touching domain, ports, or app modules.
+Decided: SQLite. See ADR-0007.
 
 ## Deferred: Domain Model
 

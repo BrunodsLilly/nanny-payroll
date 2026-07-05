@@ -34,8 +34,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePaycheck(w http.ResponseWriter, r *http.Request) {
 	hours, _ := strconv.ParseFloat(r.URL.Query().Get("hours"), 64)
 	rate, _ := strconv.ParseFloat(r.URL.Query().Get("rate"), 64)
-	payroll_service := app.NewPayrollService()
-	p := payroll_service.CalculatePaycheck()
+	payroll_service := app.NewPayrollService(nil, nil)
+	p := payroll_service.CalculatePaycheck(hours, rate)
 	json.NewEncoder(w).Encode(PaycheckResponse{
 		Gross:            p.Gross,
 		OASDI:            p.OASDI,

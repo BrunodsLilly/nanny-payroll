@@ -19,7 +19,7 @@ An employee's hourly rate can change over time. If paychecks were recalculated o
 A paycheck is computed once at run-time (when payroll is "run" for a pay period), persisted immediately as an immutable record, and never recalculated. Retrieval always reads from storage.
 
 The API reflects this:
-- `POST /employees/{id}/paychecks` with `{nclu"hours": N}` - runs payroll, persists and returns the paycheck
+- `POST /employees/{id}/paychecks` with `{"hours": N}` - runs payroll, persists and returns the paycheck
 - `GET /employees/{id}/paychecks` - returns stored historical records
 
 
