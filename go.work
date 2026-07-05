@@ -1,0 +1,11 @@
+go 1.26.4
+
+use (
+	./adapters/sqlite
+	./adapters/ui
+	./app
+	./cmd/web
+	./domain
+	./functional_tests
+	./ports
+)
