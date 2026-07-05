@@ -1,6 +1,9 @@
 package payroll
 
-import "math"
+import (
+	"math"
+	"time"
+)
 
 const oasdiTax = 0.062
 const medicareTax = 0.0145
@@ -12,21 +15,29 @@ const overtimeRate = 1.5
 // TODO: replace with annualization method when pay frequency is added to PayPeriod
 const stateIncomeTax = 0.06
 
-type EmployeeID string
 type PaycheckID string
 
-type Employee struct {
-	ID         EmployeeID
-	HourlyRate float64
+// HourlyRate is effective-dated (ADR-0010): rates are appended, never edited,
+// and the rate in force for a pay period is the latest one effective on or
+// before the period's end.
+type HourlyRate struct {
+	Amount        float64
+	EffectiveFrom time.Time
 }
 
 type PayPeriod struct {
-	ID       PaycheckID
-	Hours    float64
-	Employee Employee
+	End   time.Time
+	Hours float64
+	Rate  HourlyRate
 }
 
+// Paycheck snapshots its inputs (hours, rate) so the stored record stays
+// self-explanatory after later raises (ADR-0006, ADR-0010).
 type Paycheck struct {
+	ID                       PaycheckID
+	PeriodEnd                time.Time
+	Hours                    float64
+	HourlyRate               float64
 	Gross                    float64
 	OASDI                    float64
 	Medicare                 float64
@@ -46,7 +57,7 @@ func (p PayPeriod) Calculate() Paycheck {
 	if p.Hours > 40 {
 		overtimeHours = p.Hours - 40
 	}
-	total := round(p.Employee.HourlyRate * (p.Hours - overtimeHours + overtimeRate*overtimeHours))
+	total := round(p.Rate.Amount * (p.Hours - overtimeHours + overtimeRate*overtimeHours))
 	oasdi := round(total * oasdiTax)
 	medicare := round(total * medicareTax)
 	federalIncomeTax := round(total * federalIncomeTax)
@@ -54,6 +65,9 @@ func (p PayPeriod) Calculate() Paycheck {
 	stateIncomeTax := round(total * stateIncomeTax)
 	netPay := round(total - oasdi - medicare - federalIncomeTax - stateDisabilityInsurance - stateIncomeTax)
 	return Paycheck{
+		PeriodEnd:                p.End,
+		Hours:                    p.Hours,
+		HourlyRate:               p.Rate.Amount,
 		Gross:                    total,
 		OASDI:                    oasdi,
 		Medicare:                 medicare,

@@ -9,7 +9,6 @@ code_anchors:
     - domain/payroll/
     - app/payroll_service.go
     - ports/repository.go
-    - adapters/ui/server.go
 ---
 # Context
 NannyPayroll computes net pay from hours worked, hourly rate, and tax rules.

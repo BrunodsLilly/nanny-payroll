@@ -3,9 +3,7 @@ package payroll
 import "testing"
 
 func TestCalculateNetPay_40Hours_At20PerHour_DeductsTaxes(t *testing.T) {
-	hours := 40.0
-	rate := 20.0
-	p := PayPeriod{Hours: hours, Employee: Employee{HourlyRate: rate}}.Calculate()
+	p := PayPeriod{Hours: 40.0, Rate: HourlyRate{Amount: 20.0}}.Calculate()
 
 	if p.Gross != 800.0 {
 		t.Errorf("Expected gross 800, got %v", p.Gross)
@@ -26,13 +24,23 @@ func TestCalculateNetPay_40Hours_At20PerHour_DeductsTaxes(t *testing.T) {
 		t.Errorf("expected StateIncomeTax 48.00, got %v", p.StateIncomeTax)
 	}
 	if p.NetPay != 587.6 {
-		t.Errorf("Expected NetPay , got %v", p.NetPay)
+		t.Errorf("Expected NetPay 587.6, got %v", p.NetPay)
 	}
 }
 
 func TestCalculateNetPay_OvertimeHours_IncreasesGross(t *testing.T) {
-	p := PayPeriod{Hours: 45.0, Employee: Employee{HourlyRate: 20.0}}.Calculate()
+	p := PayPeriod{Hours: 45.0, Rate: HourlyRate{Amount: 20.0}}.Calculate()
 	if p.Gross != 950.00 {
 		t.Errorf("expected total 950.00, got %v with overtime", p.Gross)
+	}
+}
+
+func TestCalculate_SnapshotsHoursAndRate(t *testing.T) {
+	p := PayPeriod{Hours: 40.0, Rate: HourlyRate{Amount: 20.0}}.Calculate()
+	if p.Hours != 40.0 {
+		t.Errorf("expected hours 40 snapshotted, got %v", p.Hours)
+	}
+	if p.HourlyRate != 20.0 {
+		t.Errorf("expected rate 20 snapshotted, got %v", p.HourlyRate)
 	}
 }

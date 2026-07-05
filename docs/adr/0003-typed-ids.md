@@ -6,7 +6,7 @@ date: 2026-07-02
 supersedes: none
 superseded_by: none
 code_anchors:
-    - domain/payroll/employee.go
+    - domain/payroll/payroll.go
 ---
 # Context
 Employees and paychecks need a unique identifier for fetching associated data.
