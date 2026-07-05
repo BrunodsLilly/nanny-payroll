@@ -22,18 +22,30 @@ func NewPayrollService(rates ports.RateRepository, paychecks ports.PayrollReposi
 }
 
 func (s PayrollService) SetRate(amount float64, effectiveFrom time.Time) error {
-	return s.rates.Save(payroll.HourlyRate{Amount: amount, EffectiveFrom: effectiveFrom})
+	rate, err := payroll.NewHourlyRate(amount, effectiveFrom)
+	if err != nil {
+		return err
+	}
+	return s.rates.Save(rate)
 }
 
 // RunPayroll computes the paycheck for a period from the stored rate effective
 // as of the period end, persists it immediately, and returns the stored record
 // (ADR-0006: computed once, never recalculated).
 func (s PayrollService) RunPayroll(hours float64, periodEnd time.Time) (payroll.Paycheck, error) {
-	rate, err := s.rates.RateAsOf(periodEnd)
+	history, err := s.rates.History()
 	if err != nil {
 		return payroll.Paycheck{}, err
 	}
-	paycheck := payroll.PayPeriod{End: periodEnd, Hours: hours, Rate: rate}.Calculate()
+	rate, err := history.RateAsOf(periodEnd)
+	if err != nil {
+		return payroll.Paycheck{}, err
+	}
+	period, err := payroll.NewPayPeriod(periodEnd, hours, rate)
+	if err != nil {
+		return payroll.Paycheck{}, err
+	}
+	paycheck := period.Calculate()
 	paycheck.ID = newPaycheckID()
 	if err := s.paychecks.Save(paycheck); err != nil {
 		return payroll.Paycheck{}, err

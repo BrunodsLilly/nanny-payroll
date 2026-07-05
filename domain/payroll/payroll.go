@@ -1,6 +1,8 @@
 package payroll
 
 import (
+	"errors"
+	"fmt"
 	"math"
 	"time"
 )
@@ -15,6 +17,16 @@ const overtimeRate = 1.5
 // TODO: replace with annualization method when pay frequency is added to PayPeriod
 const stateIncomeTax = 0.06
 
+// maxHoursPerPeriod caps hours at a full week of hours; weekly pay assumed (ADR-0005).
+const maxHoursPerPeriod = 168
+
+var (
+	ErrNonPositiveRate = errors.New("hourly rate must be a positive amount")
+	ErrMissingDate     = errors.New("date is required")
+	ErrInvalidHours    = fmt.Errorf("hours must be positive and at most %d", maxHoursPerPeriod)
+	ErrNoRateInForce   = errors.New("no hourly rate in force")
+)
+
 type PaycheckID string
 
 // HourlyRate is effective-dated (ADR-0010): rates are appended, never edited,
@@ -25,10 +37,56 @@ type HourlyRate struct {
 	EffectiveFrom time.Time
 }
 
+// NewHourlyRate enforces the rate invariants (ADR-0012): adapters cannot
+// construct an invalid rate.
+func NewHourlyRate(amount float64, effectiveFrom time.Time) (HourlyRate, error) {
+	if amount <= 0 {
+		return HourlyRate{}, ErrNonPositiveRate
+	}
+	if effectiveFrom.IsZero() {
+		return HourlyRate{}, fmt.Errorf("effective date: %w", ErrMissingDate)
+	}
+	return HourlyRate{Amount: amount, EffectiveFrom: effectiveFrom}, nil
+}
+
+// RateHistory is the append-only record of every rate ever set.
+type RateHistory []HourlyRate
+
+// RateAsOf returns the rate in force on date: the latest rate whose
+// EffectiveFrom is on or before date (ADR-0010).
+func (h RateHistory) RateAsOf(date time.Time) (HourlyRate, error) {
+	var inForce HourlyRate
+	found := false
+	for _, rate := range h {
+		if rate.EffectiveFrom.After(date) {
+			continue
+		}
+		if !found || rate.EffectiveFrom.After(inForce.EffectiveFrom) {
+			inForce = rate
+			found = true
+		}
+	}
+	if !found {
+		return HourlyRate{}, fmt.Errorf("%w on or before %s", ErrNoRateInForce, date.Format("2006-01-02"))
+	}
+	return inForce, nil
+}
+
 type PayPeriod struct {
 	End   time.Time
 	Hours float64
 	Rate  HourlyRate
+}
+
+// NewPayPeriod enforces the period invariants (ADR-0012).
+func NewPayPeriod(end time.Time, hours float64, rate HourlyRate) (PayPeriod, error) {
+	if end.IsZero() {
+		return PayPeriod{}, fmt.Errorf("period end: %w", ErrMissingDate)
+	}
+	if hours <= 0 || hours > maxHoursPerPeriod {
+		return PayPeriod{}, ErrInvalidHours
+	}
+	return PayPeriod{End: end, Hours: hours, Rate: rate}, nil
 }
 
 // Paycheck snapshots its inputs (hours, rate) so the stored record stays

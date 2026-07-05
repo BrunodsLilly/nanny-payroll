@@ -26,6 +26,9 @@ Current ADRs:
 | 0008 | CLI-first; web adapter deleted/deferred, will return strictly read-only |
 | 0009 | No `Employee` in the domain — single-employment system |
 | 0010 | Effective-dated hourly rates stored in persistence, snapshotted into paychecks |
+| 0011 | `DATE`-typed columns, bound/scanned as `time.Time` via the driver |
+| 0012 | Business logic in domain + app only; rich domain model (constructors, `RateHistory.RateAsOf`) |
+| 0013 | DTOs at adapter boundaries — schema knowledge never leaves the adapter |
 
 ## Commands
 
@@ -63,9 +66,10 @@ cmd/cli (nannypayroll/cmd/cli)   - the driving adapter AND wiring point; the onl
 - No import flows outward-to-inward. If domain or app needs to import an adapter, that's a dependency-rule violation. `adapters/sqlite` deliberately does not import `ports` — satisfaction is checked by `var _ ports.X = ...` assertions in `cmd/cli/main.go` only.
 - Module naming is local-only (`nannypayroll/...`), resolved via `go.work` — no `replace` directives or `require` lines for sibling modules in individual `go.mod` files.
 - **Write path is CLI-only** (ADR-0008): the employer/admin records rates and runs payroll from the terminal. There is deliberately no web adapter right now; when one returns it must be read-only over the same repositories and never accept pay inputs from a request.
-- Domain model (ADR-0009: no `Employee` — this system models exactly one employment): `HourlyRate` (amount + `EffectiveFrom` date), `PayPeriod` (end date + hours + rate, has `Calculate()` → `Paycheck`), `Paycheck` (ID, period end, snapshotted hours/rate, gross/OASDI/Medicare/FIT/SDI/state tax/net, all rounded to cents). Tax rates are package-level constants in `domain/payroll/payroll.go`, hard-coded for one CA filer (ADR-0005) — see the `TODO` comment there about annualization once `PayPeriod` gains a pay frequency.
-- Ports (`ports/repository.go`): `PayrollRepository` (save/find/list paychecks) and `RateRepository` (append-only effective-dated rates, `RateAsOf(date)`). Both implemented by `adapters/sqlite`.
-- Paychecks are write-once (ADR-0006): `RunPayroll` fetches the rate effective as of the period end (ADR-0010), computes, snapshots hours+rate into the record, persists immediately, and never recalculates. Reads always come from storage — the functional test asserts a raise doesn't alter stored history.
-- Dates are stored as `YYYY-MM-DD` strings in SQLite (lexicographic order == date order) and parsed back at the adapter boundary; the domain uses `time.Time`.
+- Domain model (ADR-0009: no `Employee` — this system models exactly one employment): `HourlyRate` (amount + `EffectiveFrom` date), `RateHistory` (append-only; `RateAsOf(date)` picks the rate in force), `PayPeriod` (end date + hours + rate, has `Calculate()` → `Paycheck`), `Paycheck` (ID, period end, snapshotted hours/rate, gross/OASDI/Medicare/FIT/SDI/state tax/net, all rounded to cents). Tax rates are package-level constants in `domain/payroll/payroll.go`, hard-coded for one CA filer (ADR-0005) — see the `TODO` comment there about annualization once `PayPeriod` gains a pay frequency.
+- The domain model is deliberately rich, not thin (ADR-0012): invariants live in domain constructors (`NewHourlyRate`, `NewPayPeriod`) that return sentinel domain errors (`ErrNonPositiveRate`, `ErrInvalidHours`, `ErrNoRateInForce`, ...); rate selection is `RateHistory.RateAsOf`, not a SQL query. Adapters must not validate or decide — the CLI only parses flags and dates, then relays domain errors.
+- Ports (`ports/repository.go`) are storage-only: `PayrollRepository` (save/find/list paychecks) and `RateRepository` (`Save` + `History()` returning the full `RateHistory` for the domain to pick from). Both implemented by `adapters/sqlite`.
+- Paychecks are write-once (ADR-0006): `RunPayroll` loads the rate history, picks the rate as of the period end (ADR-0010), computes, snapshots hours+rate into the record, persists immediately, and never recalculates. Reads always come from storage — the functional test asserts a raise doesn't alter stored history.
+- Persistence mapping goes through DTOs (ADR-0013): `adapters/sqlite/dto.go` has private row structs mirroring the columns with explicit to/from-domain functions; never scan directly into domain types. Date columns are declared `DATE` and bound/scanned as `time.Time` via the `modernc.org/sqlite` driver (ADR-0011); dates are normalized to UTC midnight at the CLI boundary so stored values sort consistently.
 
 `NOTES.md` and `TODO.md` track deferred decisions (export formats, cloud-hosted storage for a future read-only web UI) and phase progress — check both before assuming something is undecided or unbuilt, since ADRs may have since resolved a NOTES.md item.

@@ -69,9 +69,6 @@ func setRate(args []string) error {
 	from := flags.String("from", time.Now().Format(dateLayout), "effective date (YYYY-MM-DD)")
 	flags.Parse(args)
 
-	if *amount <= 0 {
-		return fmt.Errorf("-amount must be a positive dollar amount")
-	}
 	effectiveFrom, err := time.Parse(dateLayout, *from)
 	if err != nil {
 		return fmt.Errorf("-from must be YYYY-MM-DD: %w", err)
@@ -97,9 +94,6 @@ func run(args []string) error {
 	periodEnd := flags.String("period-end", time.Now().Format(dateLayout), "last day of the pay period (YYYY-MM-DD)")
 	flags.Parse(args)
 
-	if *hours <= 0 {
-		return fmt.Errorf("-hours must be positive")
-	}
 	end, err := time.Parse(dateLayout, *periodEnd)
 	if err != nil {
 		return fmt.Errorf("-period-end must be YYYY-MM-DD: %w", err)

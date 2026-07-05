@@ -2,26 +2,23 @@ package sqlite
 
 import (
 	"database/sql"
-	"fmt"
-	"time"
 
 	"nannypayroll/domain/payroll"
 
 	_ "modernc.org/sqlite"
 )
 
-// Dates are stored as YYYY-MM-DD strings, which sort lexicographically in
-// date order.
-const dateLayout = "2006-01-02"
-
+// SQLite has no native date storage class, but declaring columns DATE tells
+// the modernc.org/sqlite driver to convert to/from time.Time (ADR-0011).
+// Values arrive normalized to UTC midnight from the driving adapter.
 const schema = `
 CREATE TABLE IF NOT EXISTS rates (
-	effective_from TEXT PRIMARY KEY,
+	effective_from DATE PRIMARY KEY,
 	amount         REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS paychecks (
 	id                 TEXT PRIMARY KEY,
-	period_end         TEXT NOT NULL,
+	period_end         DATE NOT NULL,
 	hours              REAL NOT NULL,
 	hourly_rate        REAL NOT NULL,
 	gross              REAL NOT NULL,
@@ -57,33 +54,30 @@ func NewRateRepository(db *sql.DB) *RateRepository {
 }
 
 func (r *RateRepository) Save(rate payroll.HourlyRate) error {
+	row := toRateRow(rate)
 	_, err := r.db.Exec(
 		`INSERT INTO rates (effective_from, amount) VALUES (?, ?)`,
-		rate.EffectiveFrom.Format(dateLayout), rate.Amount,
+		row.effectiveFrom, row.amount,
 	)
 	return err
 }
 
-func (r *RateRepository) RateAsOf(date time.Time) (payroll.HourlyRate, error) {
-	row := r.db.QueryRow(
-		`SELECT effective_from, amount FROM rates
-		 WHERE effective_from <= ? ORDER BY effective_from DESC LIMIT 1`,
-		date.Format(dateLayout),
-	)
-	var from string
-	var rate payroll.HourlyRate
-	if err := row.Scan(&from, &rate.Amount); err != nil {
-		if err == sql.ErrNoRows {
-			return payroll.HourlyRate{}, fmt.Errorf("no hourly rate effective on or before %s", date.Format(dateLayout))
-		}
-		return payroll.HourlyRate{}, err
-	}
-	effectiveFrom, err := time.Parse(dateLayout, from)
+func (r *RateRepository) History() (payroll.RateHistory, error) {
+	rows, err := r.db.Query(`SELECT effective_from, amount FROM rates`)
 	if err != nil {
-		return payroll.HourlyRate{}, err
+		return nil, err
 	}
-	rate.EffectiveFrom = effectiveFrom
-	return rate, nil
+	defer rows.Close()
+
+	var history payroll.RateHistory
+	for rows.Next() {
+		var row rateRow
+		if err := rows.Scan(&row.effectiveFrom, &row.amount); err != nil {
+			return nil, err
+		}
+		history = append(history, row.toDomain())
+	}
+	return history, rows.Err()
 }
 
 type PaycheckRepository struct {
@@ -95,13 +89,14 @@ func NewPaycheckRepository(db *sql.DB) *PaycheckRepository {
 }
 
 func (r *PaycheckRepository) Save(p payroll.Paycheck) error {
+	row := toPaycheckRow(p)
 	_, err := r.db.Exec(
 		`INSERT INTO paychecks
 		 (id, period_end, hours, hourly_rate, gross, oasdi, medicare, federal_income_tax, sdi, state_income_tax, net_pay)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		string(p.ID), p.PeriodEnd.Format(dateLayout), p.Hours, p.HourlyRate,
-		p.Gross, p.OASDI, p.Medicare, p.FederalIncomeTax,
-		p.StateDisabilityInsurance, p.StateIncomeTax, p.NetPay,
+		row.id, row.periodEnd, row.hours, row.hourlyRate,
+		row.gross, row.oasdi, row.medicare, row.federalIncomeTax,
+		row.sdi, row.stateIncomeTax, row.netPay,
 	)
 	return err
 }
@@ -140,20 +135,13 @@ type scanner interface {
 }
 
 func scanPaycheck(s scanner) (payroll.Paycheck, error) {
-	var p payroll.Paycheck
-	var id, periodEnd string
+	var row paycheckRow
 	if err := s.Scan(
-		&id, &periodEnd, &p.Hours, &p.HourlyRate,
-		&p.Gross, &p.OASDI, &p.Medicare, &p.FederalIncomeTax,
-		&p.StateDisabilityInsurance, &p.StateIncomeTax, &p.NetPay,
+		&row.id, &row.periodEnd, &row.hours, &row.hourlyRate,
+		&row.gross, &row.oasdi, &row.medicare, &row.federalIncomeTax,
+		&row.sdi, &row.stateIncomeTax, &row.netPay,
 	); err != nil {
 		return payroll.Paycheck{}, err
 	}
-	p.ID = payroll.PaycheckID(id)
-	end, err := time.Parse(dateLayout, periodEnd)
-	if err != nil {
-		return payroll.Paycheck{}, err
-	}
-	p.PeriodEnd = end
-	return p, nil
+	return row.toDomain(), nil
 }
