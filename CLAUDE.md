@@ -33,7 +33,23 @@ Current ADRs:
 
 ## Commands
 
-This is a multi-module Go workspace (`go.work`) on Go 1.26.4. There is no single `./...` build from the repo root — `go.work`'s `use` directives don't make `.` itself a module, so build/test per module or per package path:
+This is a multi-module Go workspace (`go.work`) on Go 1.26.4. There is no single `./...` build from the repo root — `go.work`'s `use` directives don't make `.` itself a module, so build/test per module or per package path. The `Makefile` wraps the per-module invocations:
+
+```bash
+make build           # go build across all modules
+make test            # test-domain + test-functional
+make test-domain     # pure domain unit tests
+make test-functional # end-to-end: app service + real SQLite in a temp dir
+make vet             # go vet across all modules
+make lint            # golangci-lint across all modules
+make fmt / fmt-check  # gofmt -w, or fail if anything isn't gofmt'd
+make tidy            # go mod tidy in every module
+make run-cli ARGS="run -hours 40 -period-end 2026-07-05"   # go run ./cmd/cli
+make list-cli         # go run ./cmd/cli list
+make clean            # go clean + remove the local dev DB
+```
+
+Equivalent raw commands, if you need a single package or a single test:
 
 ```bash
 go build ./domain/... ./ports/... ./app/... ./adapters/sqlite/... ./cmd/cli/...
