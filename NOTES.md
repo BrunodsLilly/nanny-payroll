@@ -9,39 +9,36 @@ Design concerns, deferred decisions, and gotchas. Append with `/note <text>`.
 - Hexagonal (ports & adapters) + DDD
 - Go workspace (`go.work`) — one `go.mod` per module to isolate CVE blast radius
 - Dependency rule: domain → no deps; ports → domain only; app → domain + ports;
-  adapters → ports + their own external dep; cmd/web → all adapters (wiring point)
-- UI (templ + htmx) is a **driving** adapter — it instantiates app services at startup
-- Interface satisfaction is enforced by the compiler at `cmd/web/main.go` only
-- Swapping persistence (e.g. SQLite → Postgres) = add adapter module + change one line in main.go
+  adapters → domain + their own external dep; cmd/cli → all adapters (wiring point)
+- The CLI is the only driving adapter and does all writing (ADR-0008)
+- Interface satisfaction is enforced by the compiler at `cmd/cli/main.go` only
+- Swapping persistence (e.g. SQLite → cloud DB) = add adapter module + change one line in main.go
 
-## Deferred: Persistence Layer
+## Persistence Layer
 
-**Undecided between SQLite and Postgres.**
+Decided: SQLite. See ADR-0007.
 
-Arguments for SQLite:
-- Zero infra — single file, no server
-- `modernc.org/sqlite` is pure Go (no CGO), easy to deploy anywhere
-- Fastest path to working software
+## Domain Model
 
-Arguments for Postgres:
-- Payroll data is relational by nature (employees, pay periods, payments)
-- Better for multi-user / production scenarios
-- `pgx/v5` is the gold-standard Go driver
+Pinned by ADRs: `PayPeriod`, `Paycheck` (immutable, ADR-0006), `HourlyRate`
+(effective-dated, ADR-0010). `Employee`/`Employer` deliberately absent —
+single-employment system (ADR-0009).
 
-**Leaning SQLite to start.** The adapter boundary makes this a non-commitment —
-postgres is a future drop-in without touching domain, ports, or app modules.
+## Deferred: Export formats
 
-## Deferred: Domain Model
+Paychecks/pay stubs should be exportable from the CLI (CSV? JSON? printable
+pay stub?). Format undecided — write an ADR when export is actually built.
 
-Domain nouns not yet pinned. Plausible candidates:
-- `Employee` — the nanny being paid
-- `Employer` — the family paying
-- `PayPeriod` — weekly/biweekly window
-- `Paycheck` — the output of a pay run (amount, taxes, net)
-- `HourlyRate` — value object (amount + currency)
-- `TaxWithholding` — federal/state deductions
+## Deferred: Cloud-hosted storage + read-only web UI
 
-**Do not define these until first failing test forces it.** Outside-in TDD.
+Plan: swap local SQLite for a cloud-based store that both the CLI (read-write)
+and a future web UI (read-only connection) can reach. The web UI renders stored
+records only — it never accepts pay inputs (ADR-0008). Provider/shape undecided;
+ADR when chosen. The old templ + htmx notes go with this phase:
+
+- CLI required for code generation: `go install github.com/a-h/templ/cmd/templ@latest`
+- `.templ` files generate `.go` files — add generated files to `.gitignore` or commit them (team preference TBD)
+- `templ generate` must run before `go build`
 
 ## Go Version
 
@@ -49,12 +46,6 @@ Check current stable before writing go.mod files:
 ```bash
 go version
 ```
-
-## templ
-
-- CLI required for code generation: `go install github.com/a-h/templ/cmd/templ@latest`
-- `.templ` files generate `.go` files — add generated files to `.gitignore` or commit them (team preference TBD)
-- `templ generate` must run before `go build`
 
 ## Module Naming
 
