@@ -28,7 +28,8 @@ Current ADRs:
 | 0010 | Effective-dated hourly rates stored in persistence, snapshotted into paychecks |
 | 0011 | `DATE`-typed columns, bound/scanned as `time.Time` via the driver |
 | 0012 | Business logic in domain + app only; rich domain model (constructors, `RateHistory.RateAsOf`) |
-| 0013 | DTOs at adapter boundaries — schema knowledge never leaves the adapter |
+| 0013 | ~~DTOs at adapter boundaries~~ — superseded by 0014 |
+| 0014 | Persistence models at adapter boundaries — schema knowledge never leaves the adapter |
 
 ## Commands
 
@@ -70,6 +71,6 @@ cmd/cli (nannypayroll/cmd/cli)   - the driving adapter AND wiring point; the onl
 - The domain model is deliberately rich, not thin (ADR-0012): invariants live in domain constructors (`NewHourlyRate`, `NewPayPeriod`) that return sentinel domain errors (`ErrNonPositiveRate`, `ErrInvalidHours`, `ErrNoRateInForce`, ...); rate selection is `RateHistory.RateAsOf`, not a SQL query. Adapters must not validate or decide — the CLI only parses flags and dates, then relays domain errors.
 - Ports (`ports/repository.go`) are storage-only: `PayrollRepository` (save/find/list paychecks) and `RateRepository` (`Save` + `History()` returning the full `RateHistory` for the domain to pick from). Both implemented by `adapters/sqlite`.
 - Paychecks are write-once (ADR-0006): `RunPayroll` loads the rate history, picks the rate as of the period end (ADR-0010), computes, snapshots hours+rate into the record, persists immediately, and never recalculates. Reads always come from storage — the functional test asserts a raise doesn't alter stored history.
-- Persistence mapping goes through DTOs (ADR-0013): `adapters/sqlite/dto.go` has private row structs mirroring the columns with explicit to/from-domain functions; never scan directly into domain types. Date columns are declared `DATE` and bound/scanned as `time.Time` via the `modernc.org/sqlite` driver (ADR-0011); dates are normalized to UTC midnight at the CLI boundary so stored values sort consistently.
+- Persistence mapping goes through adapter-owned persistence models, not shared DTOs (ADR-0014): `adapters/sqlite/model.go` has private row structs mirroring the columns with explicit to/from-domain functions; never scan directly into domain types. A future adapter (Postgres, JSON export) defines its own model rather than reusing sqlite's. Date columns are declared `DATE` and bound/scanned as `time.Time` via the `modernc.org/sqlite` driver (ADR-0011); dates are normalized to UTC midnight at the CLI boundary so stored values sort consistently.
 
 `NOTES.md` and `TODO.md` track deferred decisions (export formats, cloud-hosted storage for a future read-only web UI) and phase progress — check both before assuming something is undecided or unbuilt, since ADRs may have since resolved a NOTES.md item.

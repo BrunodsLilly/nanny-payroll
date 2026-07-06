@@ -1,10 +1,10 @@
 ---
 id: ADR-0013
 title: DTOs at adapter boundaries
-status: accepted
+status: superseded
 date: 2026-07-05
 supersedes: none
-superseded_by: none
+superseded_by: ADR-0014
 code_anchors:
     - adapters/sqlite/repository.go
 ---

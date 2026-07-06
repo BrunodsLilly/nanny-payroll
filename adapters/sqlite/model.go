@@ -1,5 +1,5 @@
-// DTOs mirroring the table columns; all schema knowledge stays in this
-// adapter and domain types never carry storage concerns (ADR-0013).
+// Persistence models mirroring the table columns; all schema knowledge stays
+// in this adapter and domain types never carry storage concerns (ADR-0014).
 package sqlite
 
 import (
