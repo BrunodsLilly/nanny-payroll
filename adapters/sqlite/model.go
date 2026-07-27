@@ -33,6 +33,14 @@ type paycheckRow struct {
 	sdi              float64
 	stateIncomeTax   float64
 	netPay           float64
+	employerOASDI    float64
+	employerMedicare float64
+	futa             float64
+	stateUI          float64
+	ett              float64
+	employerTaxes    float64
+	costOfEmployment float64
+	actualNetPaid    float64
 }
 
 func toPaycheckRow(p payroll.Paycheck) paycheckRow {
@@ -48,21 +56,65 @@ func toPaycheckRow(p payroll.Paycheck) paycheckRow {
 		sdi:              p.StateDisabilityInsurance,
 		stateIncomeTax:   p.StateIncomeTax,
 		netPay:           p.NetPay,
+		employerOASDI:    p.EmployerOASDI,
+		employerMedicare: p.EmployerMedicare,
+		futa:             p.FUTA,
+		stateUI:          p.StateUnemploymentInsurance,
+		ett:              p.EmploymentTrainingTax,
+		employerTaxes:    p.EmployerTaxes,
+		costOfEmployment: p.CostOfEmployment,
+		actualNetPaid:    p.ActualNetPaid,
 	}
 }
 
 func (r paycheckRow) toDomain() payroll.Paycheck {
 	return payroll.Paycheck{
-		ID:                       payroll.PaycheckID(r.id),
-		PeriodEnd:                r.periodEnd,
-		Hours:                    r.hours,
-		HourlyRate:               r.hourlyRate,
-		Gross:                    r.gross,
-		OASDI:                    r.oasdi,
-		Medicare:                 r.medicare,
-		FederalIncomeTax:         r.federalIncomeTax,
-		StateDisabilityInsurance: r.sdi,
-		StateIncomeTax:           r.stateIncomeTax,
-		NetPay:                   r.netPay,
+		ID:                         payroll.PaycheckID(r.id),
+		PeriodEnd:                  r.periodEnd,
+		Hours:                      r.hours,
+		HourlyRate:                 r.hourlyRate,
+		Gross:                      r.gross,
+		OASDI:                      r.oasdi,
+		Medicare:                   r.medicare,
+		FederalIncomeTax:           r.federalIncomeTax,
+		StateDisabilityInsurance:   r.sdi,
+		StateIncomeTax:             r.stateIncomeTax,
+		NetPay:                     r.netPay,
+		ActualNetPaid:              r.actualNetPaid,
+		EmployerOASDI:              r.employerOASDI,
+		EmployerMedicare:           r.employerMedicare,
+		FUTA:                       r.futa,
+		StateUnemploymentInsurance: r.stateUI,
+		EmploymentTrainingTax:      r.ett,
+		EmployerTaxes:              r.employerTaxes,
+		CostOfEmployment:           r.costOfEmployment,
+	}
+}
+
+type correctionPaymentRow struct {
+	id     string
+	paidOn time.Time
+	amount float64
+	note   string
+}
+
+func toCorrectionPaymentRow(p payroll.CorrectionPayment) correctionPaymentRow {
+	return correctionPaymentRow{
+		id:     string(p.ID),
+		paidOn: p.PaidOn,
+		amount: p.Amount,
+		note:   p.Note,
+	}
+}
+
+// toDomain builds the domain CorrectionPayment; paychecks is fetched
+// separately (a join table) and supplied by the caller.
+func (r correctionPaymentRow) toDomain(paychecks []payroll.PaycheckID) payroll.CorrectionPayment {
+	return payroll.CorrectionPayment{
+		ID:        payroll.PaymentID(r.id),
+		PaidOn:    r.paidOn,
+		Amount:    r.amount,
+		Paychecks: paychecks,
+		Note:      r.note,
 	}
 }

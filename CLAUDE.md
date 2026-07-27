@@ -20,7 +20,7 @@ Current ADRs:
 | 0002 | Go workspace, one module per layer |
 | 0003 | Typed IDs (`PaycheckID`) instead of raw ints |
 | 0004 | Round `float64` money values to cents |
-| 0005 | Simplified flat-rate tax withholding, hard-coded for a single CA filer |
+| 0005 | ~~Simplified flat-rate tax withholding~~ — superseded by 0015 |
 | 0006 | Paychecks are immutable — computed once, persisted, never recalculated |
 | 0007 | SQLite (via `modernc.org/sqlite`) for persistence, over Postgres |
 | 0008 | CLI-first; web adapter deleted/deferred, will return strictly read-only |
@@ -30,6 +30,10 @@ Current ADRs:
 | 0012 | Business logic in domain + app only; rich domain model (constructors, `RateHistory.RateAsOf`) |
 | 0013 | ~~DTOs at adapter boundaries~~ — superseded by 0014 |
 | 0014 | Persistence models at adapter boundaries — schema knowledge never leaves the adapter |
+| 0015 | 2026 withholding schedules (IRS Pub 15-T percentage method + CA DE 44 Method B), still hard-coded for one single CA weekly filer |
+| 0016 | Model employer-side taxes (employer SS/Medicare, FUTA, CA UI/ETT) and cost of employment; YTD wages from stored paychecks drive the $7,000 wage base |
+| 0017 | Backfill historical paychecks with a tracked `ActualNetPaid`; `Paycheck.Correction()` derives what's owed |
+| 0018 | Correction payments are append-only transaction records (date, amount, settled paychecks), not a `Settled` boolean |
 
 ## Commands
 
@@ -47,7 +51,10 @@ The CLI (the only driving adapter, ADR-0008) — every subcommand takes `-db` (d
 ```bash
 go run ./cmd/cli set-rate -amount 20 -from 2026-07-01   # record a rate, effective-dated (ADR-0010)
 go run ./cmd/cli run -hours 40 -period-end 2026-07-05   # run payroll: computes, persists, prints the stub
-go run ./cmd/cli list                                   # stored paychecks, most recent first
+go run ./cmd/cli backfill -csv history.csv              # import historical periods paid outside this tool (ADR-0017)
+go run ./cmd/cli settle-correction -amount 6.20 -paychecks id1,id2 -note "Venmo"  # record a real payment settling corrections (ADR-0018)
+go run ./cmd/cli payments                               # list recorded correction payments
+go run ./cmd/cli list                                   # stored paychecks, most recent first (CORRECTION + SETTLED columns)
 ```
 
 ## Architecture
@@ -67,7 +74,7 @@ cmd/cli (nannypayroll/cmd/cli)   - the driving adapter AND wiring point; the onl
 - No import flows outward-to-inward. If domain or app needs to import an adapter, that's a dependency-rule violation. `adapters/sqlite` deliberately does not import `ports` — satisfaction is checked by `var _ ports.X = ...` assertions in `cmd/cli/main.go` only.
 - Module naming is local-only (`nannypayroll/...`), resolved via `go.work` — no `replace` directives or `require` lines for sibling modules in individual `go.mod` files.
 - **Write path is CLI-only** (ADR-0008): the employer/admin records rates and runs payroll from the terminal. There is deliberately no web adapter right now; when one returns it must be read-only over the same repositories and never accept pay inputs from a request.
-- Domain model (ADR-0009: no `Employee` — this system models exactly one employment): `HourlyRate` (amount + `EffectiveFrom` date), `RateHistory` (append-only; `RateAsOf(date)` picks the rate in force), `PayPeriod` (end date + hours + rate, has `Calculate()` → `Paycheck`), `Paycheck` (ID, period end, snapshotted hours/rate, gross/OASDI/Medicare/FIT/SDI/state tax/net, all rounded to cents). Tax rates are package-level constants in `domain/payroll/payroll.go`, hard-coded for one CA filer (ADR-0005) — see the `TODO` comment there about annualization once `PayPeriod` gains a pay frequency.
+- Domain model (ADR-0009: no `Employee` — this system models exactly one employment): `HourlyRate` (amount + `EffectiveFrom` date), `RateHistory` (append-only; `RateAsOf(date)` picks the rate in force), `PayPeriod` (end date + hours + rate, has `Calculate()` → `Paycheck`), `Paycheck` (ID, period end, snapshotted hours/rate, gross/OASDI/Medicare/FIT/SDI/state tax/net, all rounded to cents). Tax rates are package-level constants in `domain/payroll/payroll.go`, hard-coded for one CA filer (ADR-0005, superseded by ADR-0015). Federal income tax uses the IRS Pub 15-T (2026) percentage-method weekly single/standard schedule and CA state income tax uses CA EDD DE 44 (2026) Method B (weekly, single, one allowance), both as package-level bracket tables (`federalWeeklySingleStandard`, `caWeeklySingle`) cross-referenced to `docs/research/2026-ca-nanny-payroll-withholding.md`; OASDI/Medicare/SDI stay flat-rate. Employer-side taxes (employer SS/Medicare, FUTA, CA UI/ETT) and cost of employment are modeled too (ADR-0016): `PayPeriod.Calculate(priorYearWages)` takes year-to-date gross so FUTA/UI/ETT can be capped at the shared $7,000 annual wage base, and the app supplies it via `PayrollRepository.SumGrossForYear`. `Paycheck.ActualNetPaid` and the derived `Correction()` (ADR-0017) track what was really paid vs. what should have been, for reconciling historical periods paid outside this tool; `app.PayrollService.BackfillPaycheck` and the `nannypayroll backfill -csv` command import them in chronological order, guarded by `PayrollRepository.ExistsForPeriodEnd` against double-import. A correction is settled by recording an actual `CorrectionPayment` (ADR-0018) — an append-only transaction record with a date, dollar amount, and the specific paycheck(s) it settles, validated by `payroll.NewCorrectionPayment` to equal exactly what's owed and never double-settle a paycheck; `nannypayroll settle-correction` records one, `payments` lists them, and `list` shows a SETTLED column.
 - The domain model is deliberately rich, not thin (ADR-0012): invariants live in domain constructors (`NewHourlyRate`, `NewPayPeriod`) that return sentinel domain errors (`ErrNonPositiveRate`, `ErrInvalidHours`, `ErrNoRateInForce`, ...); rate selection is `RateHistory.RateAsOf`, not a SQL query. Adapters must not validate or decide — the CLI only parses flags and dates, then relays domain errors.
 - Ports (`ports/repository.go`) are storage-only: `PayrollRepository` (save/find/list paychecks) and `RateRepository` (`Save` + `History()` returning the full `RateHistory` for the domain to pick from). Both implemented by `adapters/sqlite`.
 - Paychecks are write-once (ADR-0006): `RunPayroll` loads the rate history, picks the rate as of the period end (ADR-0010), computes, snapshots hours+rate into the record, persists immediately, and never recalculates. Reads always come from storage — the functional test asserts a raise doesn't alter stored history.

@@ -1,10 +1,10 @@
 ---
 id: ADR-0005
 title: Simplified flat-rate tax withholding
-status: accepted
+status: superseded
 date: 2026-07-02
 supersedes: none
-superseded_by: none
+superseded_by: ADR-0015
 code_anchors:
     - domain/payroll
 ---
